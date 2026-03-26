@@ -1,111 +1,135 @@
-# Grubify - Food Delivery App
+# Grubify - Food Delivery Demo App
 
-A modern food delivery application built with React TypeScript frontend and .NET backend, designed for deployment to Azure Container Apps using Azure Developer CLI (azd).
+A modern food delivery application built with React TypeScript frontend and .NET 9 Web API backend, deployed on a self-managed K3s cluster with full observability stack.
 
-## 🍕 Features
+## Architecture
 
-- **Modern UI**: Beautiful, responsive design inspired by popular food delivery apps
-- **Real Food Content**: Sample restaurants and food items with real images from Unsplash
-- **Complete Food Delivery Flow**: Browse restaurants → Add to cart → Checkout → Track orders
-- **Azure Container Apps**: Scalable, serverless container hosting
-- **Azure Developer CLI**: One-command deployment and management
-
-## 🏗️ Architecture
-
-- **Frontend**: React 18 + TypeScript + Material-UI
-- **Backend**: .NET 9 Web API with RESTful endpoints
-- **Infrastructure**: Azure Container Apps + Container Registry
-- **Deployment**: Azure Developer CLI (azd)
-
-## 🚀 Complete Deployment Guide
-
-This guide shows how to deploy Grubify with **both backend versions** (v1 with memory leak, v2 with payment failures) for testing Azure SRE Agent scenarios.
-
-## 📋 Prerequisites
-
-Before deploying Grubify, ensure you have the following tools installed and running:
-
-### Required Tools
-- **[Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)** - Latest version
-- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** - Must be **running** before deployment
-- **[Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)** - For additional Azure operations
-- **Azure Subscription** - With Contributor/Owner permissions
-
-### ⚠️ Important: Docker Desktop
-**Docker Desktop must be running before executing `azd up`**. The deployment will fail if Docker is not started.
-
-To start Docker Desktop:
-- **macOS/Windows**: Launch Docker Desktop application
-- **Linux**: Run `sudo systemctl start docker`
-
-Verify Docker is running:
-```bash
-open -a Docker
-docker --version
-docker ps
 ```
+SRE Agent (Azure AI Foundry)
+    │
+    │ MCP Protocol (Bearer Token Auth)
+    ▼
+MCP Server (mcp-grafana v0.11.3)
+    │
+    │ Grafana API
+    ▼
+Grafana ──→ Loki (logs) / Prometheus (metrics)
+    │                ▲
+    │ Alert          │ logs push
+    ▼                │
+Webhook Relay ──→ SRE Agent HTTP Trigger
+                 (Azure AD Token via MSI)
+
+K3s Cluster
+├── grubify-api (.NET 9 Web API)
+├── grubify-frontend (React + Nginx)
+└── Promtail (DaemonSet) ──→ Loki
+```
+
+## Application
+
+### Backend API (.NET 9)
+- **Tech:** ASP.NET Core Web API
+- **Endpoints:**
+  - `GET /api/restaurants` — Restaurant listings
+  - `GET /api/fooditems` — Menu items
+  - `POST /api/cart/{userId}/items` — Add to cart
+  - `GET /api/orders` — Order history
+
+### Frontend (React TypeScript)
+- **Tech:** React 18 + TypeScript + Material-UI
+- **Features:** Browse restaurants, add to cart, checkout, order tracking
+
+## Deployment
 
 ### Prerequisites
+- K3s cluster
+- Azure Container Registry (for image builds)
+- Loki + Prometheus + Grafana (observability)
 
-## 🚀 Quick Start
-
-### 1. Prerequisites Check
-Before starting, run our prerequisites check script:
-
+### Build Images (ACR)
 ```bash
-# Run the automated prerequisites check
-./scripts/check-prerequisites.sh
+# Backend
+az acr build -r <acr-name> -t grubify-api:latest --file GrubifyApi/Dockerfile GrubifyApi/
 
-
-### 2. Initial Azure Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/dm-chelupati/grubify.git
-cd grubify
-
-# ⚠️ IMPORTANT: Start Docker Desktop before proceeding
-# Verify Docker is running
-docker ps
-
-# Login to Azure
-azd auth login
-az login --use-device-code
-
-# Initialize azd project (if not already done)
-azd init
-
-# Set Azure location
-azd env set AZURE_LOCATION eastus2
+# Frontend
+az acr build -r <acr-name> -t grubify-frontend:latest \
+  --build-arg REACT_APP_API_BASE_URL=http://<api-endpoint>/api \
+  --file grubify-frontend/Dockerfile grubify-frontend/
 ```
 
-### 3. Deploy Infrastructure & Applications
-
+### Deploy to K3s
 ```bash
-# Deploy infrastructure and frontend first
-azd up
+kubectl create namespace grubify
+
+# Create ACR pull secret
+kubectl create secret docker-registry acr-secret \
+  --docker-server=<acr>.azurecr.io \
+  --docker-username=<user> \
+  --docker-password=<pass> \
+  -n grubify
+
+# Deploy API
+kubectl create deployment grubify-api \
+  --image=<acr>.azurecr.io/grubify-api:latest \
+  -n grubify
+kubectl set env deployment/grubify-api \
+  ASPNETCORE_URLS=http://+:8080 \
+  AllowedOrigins__0=http://<frontend-url> \
+  -n grubify
+kubectl expose deployment grubify-api --type=NodePort --port=80 --target-port=8080 -n grubify
+
+# Deploy Frontend
+kubectl create deployment grubify-frontend \
+  --image=<acr>.azurecr.io/grubify-frontend:latest \
+  -n grubify
+kubectl expose deployment grubify-frontend --type=NodePort --port=80 --target-port=80 -n grubify
 ```
 
-This creates:
-- **Resource Group**: `rg-grubify-app`
-- **Container Registry**: `crgrubify`
-- **Container Apps Environment**: `cae-grubify`
-- **API Container App**: `ca-grubify-api`
-- **Frontend Container App**: `ca-grubify-frontend`
-- **Log Analytics Workspace**: `log-grubify`
+## Observability
 
-### 6. Ready for SRE Scenarios
+### Log Collection
+- **Promtail** (DaemonSet on all K3s nodes) collects container logs
+- Pushes to **Loki** for storage and querying via LogQL
 
-Now you have:
-- ✅ **Frontend deployed** and working
-- ✅ **Backend deployed** and working
-- ✅ **Infrastructure configured** for testing scenarios
+### Metrics
+- **Prometheus** scrapes K3s API Server, Kubelet, cAdvisor
+- Container memory, CPU, restart counts available
 
-**SRE Agent Setup:**
-1. **Create agent** - ([Azure SRE Agent Usage Guide](https://learn.microsoft.com/en-us/azure/sre-agent/usage))
-2. **Map GitHub repo** that you cloned this to: **https://github.com/dm-chelupati/grubify.git**
-3. **Connect Service Now** to your SRE agent
-4. **Setup incident handler** with custom instructions for automated diagnosis and mitigation
-5. **Simulate memory leak** using the deployed application endpoints
-6. **Create incident in Service Now** to trigger SRE agent response
+### Visualization & Alerting
+- **Grafana** connects to both Loki and Prometheus as datasources
+- Alert rules monitor for application errors (e.g., HTTP 5xx)
+- Alerts forwarded to SRE Agent via webhook relay
 
+### MCP Integration
+- **mcp-grafana** exposes Grafana capabilities via Model Context Protocol
+- SRE Agent can query logs (LogQL), metrics (PromQL), and manage dashboards
+- Authentication: Nginx reverse proxy with Bearer Token
+
+## Knowledge Base
+
+- `knowledge-base/architecture.md` — System architecture reference
+- `knowledge-base/http-500-errors-k8s.md` — HTTP 500 investigation runbook
+
+## Project Structure
+
+```
+├── GrubifyApi/              # .NET 9 Web API backend
+│   ├── Controllers/         # API controllers
+│   ├── Models/              # Data models
+│   ├── Dockerfile           # Backend container image
+│   └── Program.cs           # App entry point
+├── grubify-frontend/        # React TypeScript frontend
+│   ├── src/                 # React components & pages
+│   ├── nginx.conf           # Nginx config for SPA
+│   └── Dockerfile           # Frontend container image
+├── knowledge-base/          # SRE Agent knowledge files
+│   ├── architecture.md      # System architecture
+│   └── http-500-errors-k8s.md  # Investigation runbook
+├── infra/                   # Azure Bicep templates (reference)
+└── scripts/                 # Utility scripts
+```
+
+## License
+
+This project is based on [Grubify](https://github.com/dm-chelupati/grubify) from the [Microsoft SRE Agent](https://github.com/microsoft/sre-agent) starter lab.
