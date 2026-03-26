@@ -4,7 +4,15 @@
 `500 error`, `internal server error`, `HTTP 500`, `server error`, `application error`, `unresponsive`, `OOMKilled`, `CrashLoopBackOff`
 
 ## Scope
-Grubify application deployed on K3s cluster (namespace: grubify). Logs in Loki, metrics in Prometheus, queried via Grafana MCP Server.
+Grubify application deployed on K3s cluster (namespace: grubify). Logs in Loki, metrics in Prometheus.
+
+## IMPORTANT: Use MCP Tools First
+All log queries and metric queries MUST be performed through the Grafana MCP Server tools. Do NOT use kubectl, curl, or direct API calls to Loki/Prometheus. The MCP tools provide authenticated, structured access to all observability data:
+- **Logs** → use `query_loki_logs`, `list_loki_label_names`, `list_loki_label_values`
+- **Metrics** → use `query_prometheus`, `list_prometheus_label_values`, `list_prometheus_metric_names`
+- **Dashboards** → use `search_dashboards`, `get_dashboard_by_uid`
+
+Only fall back to direct access if MCP tools are unavailable.
 
 ## MCP Connection
 - Endpoint: http://40.83.74.188:8080/mcp
