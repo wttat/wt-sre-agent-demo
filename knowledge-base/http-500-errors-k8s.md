@@ -195,26 +195,6 @@ queryType: instant
 
 ---
 
-## Phase 5: Remediation
-
-### 5.1 Immediate Mitigation
-- **Restart the affected pod:** `kubectl rollout restart deployment grubify-api -n grubify`
-- This clears in-memory state and restores service
-
-### 5.2 Root Cause: Memory Leak in Cart API
-- **File:** `GrubifyApi/Controllers/CartController.cs`
-- **Issue:** Static `_carts` dictionary accumulates cart items without eviction
-- **Evidence:** "Cache size" log entries showing steady MB growth
-- **Fix:** Add TTL-based cache eviction or maximum cart size limit
-
-### 5.3 Long-term Prevention
-- Set memory limits on deployment: `resources.limits.memory: 512Mi`
-- Configure Prometheus alerting rule for memory threshold
-- Add health check endpoint with memory reporting
-- Implement cart cleanup/expiry logic in application code
-
----
-
 ## Investigation Summary Template
 
 When reporting findings, use this structure:
