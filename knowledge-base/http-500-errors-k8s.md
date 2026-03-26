@@ -1,10 +1,10 @@
-# HTTP 500 Error Investigation Runbook (K3s + Grafana MCP)
+# HTTP 500 Error Investigation Runbook
 
 ## Trigger Keywords
 `500 error`, `internal server error`, `HTTP 500`, `server error`, `application error`, `unresponsive`, `OOMKilled`, `CrashLoopBackOff`
 
 ## Scope
-Grubify application deployed on K3s cluster (namespace: grubify). Logs in Loki, metrics in Prometheus.
+Application deployed on Kubernetes cluster. Logs collected by Promtail into Loki, metrics scraped by Prometheus.
 
 ## IMPORTANT: Use MCP Tools First
 All log queries and metric queries MUST be performed through the Grafana MCP Server tools. Do NOT use kubectl, curl, or direct API calls to Loki/Prometheus. The MCP tools provide authenticated, structured access to all observability data:
