@@ -27,38 +27,16 @@ Only fall back to direct access if MCP tools are unavailable.
 - Loki time range uses `startRfc3339` / `endRfc3339`
 - Prometheus time range uses `startTime` / `endTime`
 
+## Known Limitations
+- `container_memory_working_set_bytes{namespace="grubify"}` instant query may return empty. Use `container="grubify-api"` filter + range query with `stepSeconds` to get data.
+- `kube_pod_container_status_restarts_total` and other `kube_*` metrics are NOT available (kube-state-metrics is not deployed). Check pod restart info via Loki logs instead: `{namespace="grubify"} |~ "(?i)(restart|started|back-off)"`.
+- `kube_pod_status_phase` and `kube_pod_container_status_last_terminated_reason` are also unavailable for the same reason.
+
 ---
 
 ## Phase 1: Container Memory and CPU Metrics (Check First)
 
 ### 1.1 Container Memory Usage
-```
-Tool: query_prometheus
-datasourceUid: cfh5p2u9zvke8c
-expr: container_memory_working_set_bytes{namespace="grubify"}
-startTime: now-1h
-queryType: instant
-```
-
-### 1.2 Container CPU Usage
-```
-Tool: query_prometheus
-datasourceUid: cfh5p2u9zvke8c
-expr: rate(container_cpu_usage_seconds_total{namespace="grubify"}[5m])
-startTime: now-1h
-queryType: instant
-```
-
-### 1.3 Container Restart Count (OOM Indicator)
-```
-Tool: query_prometheus
-datasourceUid: cfh5p2u9zvke8c
-expr: kube_pod_container_status_restarts_total{namespace="grubify"}
-startTime: now-1h
-queryType: instant
-```
-
-### 1.4 Memory Usage Over Time (Range Query)
 ```
 Tool: query_prometheus
 datasourceUid: cfh5p2u9zvke8c
@@ -68,12 +46,31 @@ queryType: range
 stepSeconds: 60
 ```
 
+### 1.2 Container CPU Usage
+```
+Tool: query_prometheus
+datasourceUid: cfh5p2u9zvke8c
+expr: rate(container_cpu_usage_seconds_total{namespace="grubify", container="grubify-api"}[5m])
+startTime: now-1h
+queryType: range
+stepSeconds: 60
+```
+
+### 1.3 Memory Usage Trend (Detect Growth)
+```
+Tool: query_prometheus
+datasourceUid: cfh5p2u9zvke8c
+expr: container_memory_working_set_bytes{namespace="grubify", container="grubify-api"}
+startTime: now-30m
+queryType: range
+stepSeconds: 30
+```
+
 ### Resource Thresholds Reference
 | Metric | Warning | Critical | Action |
 |--------|---------|----------|--------|
-| Memory | > 75% of limit | > 90% of limit | Investigate memory leak, restart pod |
+| Memory | > 75% of limit | > 90% of limit | Investigate memory issue, restart pod |
 | CPU | > 70% sustained | > 90% sustained | Check for hot loops, scale replicas |
-| Restarts | > 0 in 1h | > 3 in 1h | Check OOMKilled, CrashLoopBackOff |
 
 ---
 
@@ -111,15 +108,15 @@ logql: {namespace="grubify", container="grubify-api"} |~ "(?i)(exception|stack t
 limit: 10
 ```
 
-### 2.5 Cart API Request Volume (Memory Leak Indicator)
+### 2.5 High-Volume API Request Patterns
 ```
 Tool: query_loki_logs
 datasourceUid: bfh5p2h9cxczkd
-logql: {namespace="grubify", container="grubify-api"} |= "cart" |= "Added"
+logql: {namespace="grubify", container="grubify-api"} |= "Added"
 limit: 20
 ```
 
-### 2.6 Cache Size Growth (Specific to Grubify Memory Leak)
+### 2.6 Cache / Memory Growth Indicators
 ```
 Tool: query_loki_logs
 datasourceUid: bfh5p2h9cxczkd
@@ -175,23 +172,23 @@ startTime: now-1h
 queryType: instant
 ```
 
-### 4.2 Pod Status (Running vs Not Running)
+### 4.2 Pod Restart / Crash Evidence (via Loki)
+Since kube-state-metrics is not deployed, check for restart indicators in logs:
 ```
-Tool: query_prometheus
-datasourceUid: cfh5p2u9zvke8c
-expr: kube_pod_status_phase{namespace="grubify"}
-startTime: now-1h
-queryType: instant
+Tool: query_loki_logs
+datasourceUid: bfh5p2h9cxczkd
+logql: {namespace="grubify"} |~ "(?i)(restart|started|back-off|OOMKilled|CrashLoop)"
+limit: 20
 ```
 
-### 4.3 Container OOMKilled Events
+### 4.3 Container Process Start Events
 ```
-Tool: query_prometheus
-datasourceUid: cfh5p2u9zvke8c
-expr: kube_pod_container_status_last_terminated_reason{namespace="grubify", reason="OOMKilled"}
-startTime: now-1h
-queryType: instant
+Tool: query_loki_logs
+datasourceUid: bfh5p2h9cxczkd
+logql: {namespace="grubify", container="grubify-api"} |= "Content root path"
+limit: 10
 ```
+Note: .NET apps log "Content root path" on startup. Multiple entries in short time = restarts.
 
 ---
 
@@ -216,8 +213,8 @@ When reporting findings, use this structure:
 
 ## Evidence
 - [Loki logs showing errors]
-- [Prometheus metrics showing memory growth]
-- [Cache size progression from logs]
+- [Prometheus metrics showing resource usage]
+- [Application log patterns]
 
 ## Root Cause
 [Detailed root cause with code reference]
