@@ -4,7 +4,6 @@
 
 A K3s-based monitoring and observability platform deployed on Azure VMs, with SRE Agent integration via MCP protocol.
 
-- Subscription: MCAPS-Hybrid-REQ-108373-2024-tonwu
 - Resource Group: k8s (eastasia)
 - Network: VNet k3s-vnet (10.0.0.0/16), Subnet k3s-subnet (10.0.1.0/24), NSG k3s-nsg
 
