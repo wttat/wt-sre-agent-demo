@@ -38,9 +38,14 @@ A K3s-based monitoring and observability platform deployed on Azure VMs, with SR
   - Runs: Docker → Grafana (:3000, v12.4.2)
   - Datasources: Loki (10.0.1.8:3100), Prometheus (10.0.1.7:9090)
 
+- **gitlab-server** (10.0.1.11, D4s_v5) — Code hosting + GitLab MCP
+  - Runs: GitLab CE v18.10.3 (:80) + Docker → gitlab-mcp (:3002, streamable-http)
+  - Repository: root/wt-sre-agent-demo (Grubify application source code)
+  - MCP auth: REMOTE_AUTHORIZATION=true, requires Private-Token header
+
 ## Application: Grubify
 
-Deployed in K3s namespace `grubify`. Source: github.com/wttat/wt-sre-agent-demo
+Deployed in K3s namespace `grubify`. Source code hosted on self-managed GitLab at gitlab-server (10.0.1.11).
 
 - **grubify-api** — .NET 9 Web API backend
   - Image: k8sacr17598.azurecr.io/grubify-api:latest
@@ -65,8 +70,11 @@ Deployed in K3s namespace `grubify`. Source: github.com/wttat/wt-sre-agent-demo
 - Grafana (10.0.1.10:3000) → queries → Loki (10.0.1.8:3100) via LogQL
 - Grafana (10.0.1.10:3000) → queries → Prometheus (10.0.1.7:9090) via PromQL
 
-### MCP Integration
+### MCP Integration (Observability)
 - SRE Agent → authenticates with Bearer Token → Nginx on mcp-server (:8080) → proxies to → mcp-grafana (:8000) → calls → Grafana API (10.0.1.10:3000) → queries → Loki / Prometheus
+
+### MCP Integration (Code)
+- SRE Agent → authenticates with Private-Token header → gitlab-mcp on gitlab-server (:3002) → calls → GitLab API (10.0.1.11:80) → searches code, reads files, lists commits
 
 ## NSG Rules
 
@@ -82,3 +90,5 @@ Deployed in K3s namespace `grubify`. Source: github.com/wttat/wt-sre-agent-demo
 | 9090 | TCP | Prometheus |
 | 30081 | TCP | Grubify API (NodePort) |
 | 30083 | TCP | Grubify Frontend (NodePort) |
+| 80 | TCP | GitLab CE |
+| 3002 | TCP | GitLab MCP Server |
